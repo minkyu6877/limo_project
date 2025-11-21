@@ -350,8 +350,11 @@ class Class_sub:
                     right_avg_index = (right_nonzero[0] + right_nonzero[-1]) // 2 + center_index
                     right_indices.append(right_avg_index)
 
-                    # [최적화 6] 렉 방지를 위해 불필요한 그리기 연산 제거 (슬라이딩 윈도우 계산은 유지)
-                    # cv2.line ... 등의 시각화 코드는 주행에 필요 없음
+                    # [최적화 6] 렉 방지를 위해 불필요한 그리기 연산 모두 주석 처리
+                    # cv2.line(warp_img, (left_avg_index, y - window_y_size * (i + 1) + window_y_size // 2), (left_avg_index, y - window_y_size * (i + 1) + window_y_size // 2), (0, 0, 255), 10)
+                    # cv2.line(warp_img, (right_avg_index, y - window_y_size * (i + 1) + window_y_size // 2), (right_avg_index, y - window_y_size * (i + 1) + window_y_size // 2), (255, 0, 0), 10)
+                    # cv2.rectangle(warp_img, (left_avg_index - margin, upper_y), (left_avg_index + margin, lower_y), (255, 0, 0), 3)
+                    # cv2.rectangle(warp_img, (right_avg_index - margin, upper_y), (right_avg_index + margin, lower_y), (0, 0, 255), 3)
                 except :
                     pass
             
@@ -363,6 +366,7 @@ class Class_sub:
                     right_avg = sum(right_indices) / len(right_indices)
                     avg_indices = int((left_avg + right_avg) // 2)
 
+                    # [시각화 주석]
                     # cv2.line(warp_img, (avg_indices, 0), (avg_indices, y), (0, 255, 255), 3)
                     error_index = center_index - avg_indices
                     self.steer = (error_index * math.pi / x) * self.steer_weight
@@ -372,8 +376,26 @@ class Class_sub:
             except:
                 pass
             
-            # [최적화 7] 렉의 주범(네트워크 부하)인 imshow 관련 코드 전부 주석 처리
-            # Merged Image 생성 및 출력 안 함
+            # [최적화 7] ★★★ 가장 중요한 부분: 화면 전송 관련 코드 전부 주석 처리 ★★★
+            # 렉 유발 원인 1: 선 그리기
+            # cv2.line(warp_img, (center_index, 0), (center_index, y), (0, 255, 0), 3)
+            # cv2.line(cv_img, src_pt1, src_pt2, (0, 255, 0), 3)
+            # cv2.line(cv_img, src_pt2, src_pt3, (0, 255, 0), 3)
+            # cv2.line(cv_img, src_pt3, src_pt4, (0, 255, 0), 3)
+
+            # 렉 유발 원인 2: 이미지 리사이징 및 병합 연산
+            # height, width = cv_img.shape[:2]
+            # combine_filter = cv2.resize(combine_filter, (width, height))
+            # yellow_filter_roi = cv2.resize(yellow_filter_roi, (width, height))
+            # red_filter_roi = cv2.resize(red_filter_roi, (width, height))
+
+            # combine_filter = cv2.cvtColor(combine_filter, cv2.COLOR_GRAY2BGR)
+            # top_row = np.hstack((cv_img, combine_filter)) 
+            # bottom_row = np.hstack((yellow_filter_roi, red_filter_roi)) 
+            # bottom_row = cv2.cvtColor(bottom_row, cv2.COLOR_GRAY2BGR)
+            # merged_image = np.vstack((top_row, bottom_row)) 
+
+            # 렉 유발 원인 3: 화면 출력 (Wifi 대역폭 점유)
             # cv2.imshow("Merged Image", merged_image)
             # cv2.waitKey(1)
 
@@ -473,7 +495,7 @@ if __name__ == "__main__":
     
     class_sub = Class_sub()
 
-    # 초기 대기 화면 설정 (필수)
+    # 초기 대기 화면 설정 (이건 남겨둬야 키 입력을 받습니다)
     img = np.ones((300, 500), dtype=np.uint8) * 255 
     cv2.imshow("readytogo", img)
     
