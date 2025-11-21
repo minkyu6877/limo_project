@@ -19,7 +19,7 @@ class Class_sub:
         self.cmd_msg = Twist() 
         self.bridge = CvBridge()
         
-        # [수정 1] 랙이 없으므로 반응속도를 30Hz로 올림
+        # [최적화 1] 화면 전송을 껐으므로 연산 주기를 30Hz로 올려 반응성을 높임
         self.rate = rospy.Rate(30) 
         
         self.camera_flag = False
@@ -47,10 +47,10 @@ class Class_sub:
         self.scan_Rdgree = 25   # 오른쪽 스캔 각
         self.min_dist = 0.5
 
-        # [수정 2] 속도를 안전하게 낮춤
+        # [최적화 2] 안전을 위해 주행 속도 하향 조정 (배터리 전압 방어)
         self.speed = 0
         self.angle = 0
-        self.default_speed = 0.1       # 기존 0.15 -> 0.1 (감속)
+        self.default_speed = 0.1       # 기존 0.15 -> 0.1
         self.default_angle = 0.0
         self.turning_speed = 0.08
         self.backward_speed = -0.08
@@ -109,7 +109,7 @@ class Class_sub:
         self.margin_x = 150
         self.margin_y = 350
 
-        # [수정 3] 카메라 주행 속도 및 조향 감도 조절
+        # [최적화 3] 카메라 주행 속도 및 조향 감도 조절
         self.camera_speed = 0.12     # 기존 0.3 -> 0.12 (안전 속도)
         self.steer_weight = 2.0      # 기존 2.5 -> 2.0 (핸들 털림 방지)
         
@@ -156,7 +156,7 @@ class Class_sub:
             
     #--------------------------------L i D A R----------------------------------#     
     def LiDAR_scan(self):
-        # [수정 4] msg가 None일 때의 예외처리 (안전장치)
+        # [최적화 4] msg가 None일 때의 예외처리 (안전장치)
         if self.msg is None:
             return 0, 0, 0, 0
 
@@ -189,8 +189,12 @@ class Class_sub:
     
     def move_direction(self, last, first):
         if self.direction == "right":
+            # [최적화 5 - 중요] 리스트 초기화 (메모리 누수 방지)
+            self.center_list_left = [] 
+            
             for i in range(first):
                 self.center_list_left.append(i)
+            
             if self.center_list_left:
                 Lcenter = self.center_list_left[math.floor(first/2)]
                 center_angle_left = -self.msg.angle_increment * Lcenter
@@ -198,8 +202,12 @@ class Class_sub:
                 self.speed = self.default_speed * 0.9
 
         elif self.direction == "left":
+            # [최적화 5 - 중요] 리스트 초기화 (메모리 누수 방지)
+            self.center_list_right = []
+            
             for i in range(len(self.msg.ranges)):
                 self.center_list_right.append(last+i)
+            
             if self.center_list_right:
                 Rcenter = self.center_list_right[
                     math.floor(last + (self.ranges_length - last)/2)
@@ -308,7 +316,7 @@ class Class_sub:
             dst_pts = np.float32([dst_pt1, dst_pt2, dst_pt3, dst_pt4])
 
             matrix = cv2.getPerspectiveTransform(src_pts, dst_pts)
-            matrix_inv = cv2.getPerspectiveTransform(dst_pts, src_pts)
+            # matrix_inv = cv2.getPerspectiveTransform(dst_pts, src_pts)
             warp_img = cv2.warpPerspective(and_img, matrix, (x, y))
             gray_img = cv2.cvtColor(warp_img, cv2.COLOR_BGR2GRAY)
             bin_img = np.zeros_like(gray_img)
@@ -316,7 +324,7 @@ class Class_sub:
             center_index = x // 2
 
             window_num = 8
-            margin = 40
+            # margin = 40
             window_y_size = y // window_num # 60
             left_indices = []
             right_indices = []
@@ -342,11 +350,8 @@ class Class_sub:
                     right_avg_index = (right_nonzero[0] + right_nonzero[-1]) // 2 + center_index
                     right_indices.append(right_avg_index)
 
-                    # [수정 5] 렉 방지를 위해 이미지에 선 그리는 연산 최소화 (주행 성능엔 영향 없음)
-                    # cv2.line(warp_img, (left_avg_index, y - window_y_size * (i + 1) + window_y_size // 2), (left_avg_index, y - window_y_size * (i + 1) + window_y_size // 2), (0, 0, 255), 10)
-                    # cv2.line(warp_img, (right_avg_index, y - window_y_size * (i + 1) + window_y_size // 2), (right_avg_index, y - window_y_size * (i + 1) + window_y_size // 2), (255, 0, 0), 10)
-                    # cv2.rectangle(warp_img, (left_avg_index - margin, upper_y), (left_avg_index + margin, lower_y), (255, 0, 0), 3)
-                    # cv2.rectangle(warp_img, (right_avg_index - margin, upper_y), (right_avg_index + margin, lower_y), (0, 0, 255), 3)
+                    # [최적화 6] 렉 방지를 위해 불필요한 그리기 연산 제거 (슬라이딩 윈도우 계산은 유지)
+                    # cv2.line ... 등의 시각화 코드는 주행에 필요 없음
                 except :
                     pass
             
@@ -367,26 +372,9 @@ class Class_sub:
             except:
                 pass
             
-            # [수정 6] 렉(반응 지연)의 주범인 이미지 병합 및 화면 출력을 모두 주석 처리함
-            # cv2.line(warp_img, (center_index, 0), (center_index, y), (0, 255, 0), 3)
-            # cv2.line(cv_img, src_pt1, src_pt2, (0, 255, 0), 3)
-            # cv2.line(cv_img, src_pt2, src_pt3, (0, 255, 0), 3)
-            # cv2.line(cv_img, src_pt3, src_pt4, (0, 255, 0), 3)
-
-            # height, width = cv_img.shape[:2]
-            # combine_filter = cv2.resize(combine_filter, (width, height))
-            # yellow_filter_roi = cv2.resize(yellow_filter_roi, (width, height))
-            # red_filter_roi = cv2.resize(red_filter_roi, (width, height))
-
-            # combine_filter = cv2.cvtColor(combine_filter, cv2.COLOR_GRAY2BGR)
-            # top_row = np.hstack((cv_img, combine_filter)) 
-            # bottom_row = np.hstack((yellow_filter_roi, red_filter_roi)) 
-            # bottom_row = cv2.cvtColor(bottom_row, cv2.COLOR_GRAY2BGR)
-            # merged_image = np.vstack((top_row, bottom_row)) 
-
+            # [최적화 7] 렉의 주범(네트워크 부하)인 imshow 관련 코드 전부 주석 처리
+            # Merged Image 생성 및 출력 안 함
             # cv2.imshow("Merged Image", merged_image)
-            
-            # [수정 7] waitKey 제거 (메인 루프에서 제어)
             # cv2.waitKey(1)
 
     #---------------------------MAIN------------------------------------#
@@ -485,7 +473,7 @@ if __name__ == "__main__":
     
     class_sub = Class_sub()
 
-    # 초기 대기 화면 설정 (화면 출력을 안 하더라도 waitKey용으로 하나는 띄워야 함)
+    # 초기 대기 화면 설정 (필수)
     img = np.ones((300, 500), dtype=np.uint8) * 255 
     cv2.imshow("readytogo", img)
     
@@ -515,7 +503,7 @@ if __name__ == "__main__":
         while not rospy.is_shutdown():
             class_sub.ctrl()
             
-            # [수정 8] 키 입력을 변수에 저장 후 비교 (키 씹힘 방지)
+            # [최적화 8] 키 입력을 변수에 저장 후 비교 (키 씹힘 방지)
             key = cv2.waitKey(1) & 0xFF 
             
             if key == ord('k'):
