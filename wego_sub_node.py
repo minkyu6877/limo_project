@@ -19,8 +19,8 @@ class Class_sub:
         self.cmd_msg = Twist() 
         self.bridge = CvBridge()
         
-        # [수정 1] 루프 주기 45Hz -> 20Hz (연산 부하 감소 및 안정화)
-        self.rate = rospy.Rate(20) 
+        # [수정 1] 랙이 없으므로 반응속도를 30Hz로 올림
+        self.rate = rospy.Rate(30) 
         
         self.camera_flag = False
         self.e_stop_flag = False
@@ -47,9 +47,10 @@ class Class_sub:
         self.scan_Rdgree = 25   # 오른쪽 스캔 각
         self.min_dist = 0.5
 
+        # [수정 2] 속도를 안전하게 낮춤
         self.speed = 0
         self.angle = 0
-        self.default_speed = 0.15
+        self.default_speed = 0.1       # 기존 0.15 -> 0.1 (감속)
         self.default_angle = 0.0
         self.turning_speed = 0.08
         self.backward_speed = -0.08
@@ -108,8 +109,9 @@ class Class_sub:
         self.margin_x = 150
         self.margin_y = 350
 
-        self.camera_speed = 0.3
-        self.steer_weight = 2.5
+        # [수정 3] 카메라 주행 속도 및 조향 감도 조절
+        self.camera_speed = 0.12     # 기존 0.3 -> 0.12 (안전 속도)
+        self.steer_weight = 2.0      # 기존 2.5 -> 2.0 (핸들 털림 방지)
         
         rospy.Subscriber("/scan", LaserScan, self.lidar_cb) # 2. node 역할 설정
         rospy.Subscriber("/usb_cam/image_raw/compressed", CompressedImage, self.camera_cb) # 2. node 역할 설정
@@ -123,7 +125,7 @@ class Class_sub:
         # no more mission3 
         self.mission3_count = 0
         self.is_scan = True
-        self.camera_speed = 0.15
+        self.camera_speed = 0.1
         self.steer_weight = 1.7
         self.start = True # 타이머 리셋을 위해 필요할 수 있음
         print ("EMERGENCY ACTIVE")
@@ -154,7 +156,7 @@ class Class_sub:
             
     #--------------------------------L i D A R----------------------------------#     
     def LiDAR_scan(self):
-        # [수정 2] msg가 None일 때의 예외처리 (안전장치)
+        # [수정 4] msg가 None일 때의 예외처리 (안전장치)
         if self.msg is None:
             return 0, 0, 0, 0
 
@@ -189,7 +191,6 @@ class Class_sub:
         if self.direction == "right":
             for i in range(first):
                 self.center_list_left.append(i)
-            # [수정 3] math.floor 사용
             if self.center_list_left:
                 Lcenter = self.center_list_left[math.floor(first/2)]
                 center_angle_left = -self.msg.angle_increment * Lcenter
@@ -199,7 +200,6 @@ class Class_sub:
         elif self.direction == "left":
             for i in range(len(self.msg.ranges)):
                 self.center_list_right.append(last+i)
-            # [수정 3] math.floor 사용 및 index error 방지
             if self.center_list_right:
                 Rcenter = self.center_list_right[
                     math.floor(last + (self.ranges_length - last)/2)
@@ -342,14 +342,11 @@ class Class_sub:
                     right_avg_index = (right_nonzero[0] + right_nonzero[-1]) // 2 + center_index
                     right_indices.append(right_avg_index)
 
-                    cv2.line(warp_img, (left_avg_index, y - window_y_size * (i + 1) + window_y_size // 2), (left_avg_index, y - window_y_size * (i + 1) + window_y_size // 2), (0, 0, 255), 10)
-                    cv2.line(warp_img, (right_avg_index, y - window_y_size * (i + 1) + window_y_size // 2), (right_avg_index, y - window_y_size * (i + 1) + window_y_size // 2), (255, 0, 0), 10)
-                    cv2.rectangle(warp_img, (left_avg_index - margin, upper_y), (left_avg_index + margin, lower_y), (255, 0, 0), 3)
-                    cv2.rectangle(warp_img, (right_avg_index - margin, upper_y), (right_avg_index + margin, lower_y), (0, 0, 255), 3)
-                    
-                    # [수정 4] np.average 대신 단순 변수 사용 권장 (형변환 오류 방지)
-                    # left_avg_indices = np.average(left_indices)
-                    # right_avg_indices = np.average(right_indices)
+                    # [수정 5] 렉 방지를 위해 이미지에 선 그리는 연산 최소화 (주행 성능엔 영향 없음)
+                    # cv2.line(warp_img, (left_avg_index, y - window_y_size * (i + 1) + window_y_size // 2), (left_avg_index, y - window_y_size * (i + 1) + window_y_size // 2), (0, 0, 255), 10)
+                    # cv2.line(warp_img, (right_avg_index, y - window_y_size * (i + 1) + window_y_size // 2), (right_avg_index, y - window_y_size * (i + 1) + window_y_size // 2), (255, 0, 0), 10)
+                    # cv2.rectangle(warp_img, (left_avg_index - margin, upper_y), (left_avg_index + margin, lower_y), (255, 0, 0), 3)
+                    # cv2.rectangle(warp_img, (right_avg_index - margin, upper_y), (right_avg_index + margin, lower_y), (0, 0, 255), 3)
                 except :
                     pass
             
@@ -361,38 +358,33 @@ class Class_sub:
                     right_avg = sum(right_indices) / len(right_indices)
                     avg_indices = int((left_avg + right_avg) // 2)
 
-                    cv2.line(warp_img, (avg_indices, 0), (avg_indices, y), (0, 255, 255), 3)
+                    # cv2.line(warp_img, (avg_indices, 0), (avg_indices, y), (0, 255, 255), 3)
                     error_index = center_index - avg_indices
-                    # [수정 5] math.pi 사용
                     self.steer = (error_index * math.pi / x) * self.steer_weight
                 else:
-                    # 차선을 못 찾았을 경우 조향 유지 혹은 0 (상황에 따라 주석 해제)
-                    # self.steer = 0 
                     pass
 
             except:
                 pass
             
-            cv2.line(warp_img, (center_index, 0), (center_index, y), (0, 255, 0), 3)
-            # warp_inv_img = cv2.warpPerspective(warp_img, matrix_inv, (x, y))
+            # [수정 6] 렉(반응 지연)의 주범인 이미지 병합 및 화면 출력을 모두 주석 처리함
+            # cv2.line(warp_img, (center_index, 0), (center_index, y), (0, 255, 0), 3)
+            # cv2.line(cv_img, src_pt1, src_pt2, (0, 255, 0), 3)
+            # cv2.line(cv_img, src_pt2, src_pt3, (0, 255, 0), 3)
+            # cv2.line(cv_img, src_pt3, src_pt4, (0, 255, 0), 3)
 
-            cv2.line(cv_img, src_pt1, src_pt2, (0, 255, 0), 3)
-            cv2.line(cv_img, src_pt2, src_pt3, (0, 255, 0), 3)
-            cv2.line(cv_img, src_pt3, src_pt4, (0, 255, 0), 3)
+            # height, width = cv_img.shape[:2]
+            # combine_filter = cv2.resize(combine_filter, (width, height))
+            # yellow_filter_roi = cv2.resize(yellow_filter_roi, (width, height))
+            # red_filter_roi = cv2.resize(red_filter_roi, (width, height))
 
-            height, width = cv_img.shape[:2]
-            combine_filter = cv2.resize(combine_filter, (width, height))
-            yellow_filter_roi = cv2.resize(yellow_filter_roi, (width, height))
-            red_filter_roi = cv2.resize(red_filter_roi, (width, height))
+            # combine_filter = cv2.cvtColor(combine_filter, cv2.COLOR_GRAY2BGR)
+            # top_row = np.hstack((cv_img, combine_filter)) 
+            # bottom_row = np.hstack((yellow_filter_roi, red_filter_roi)) 
+            # bottom_row = cv2.cvtColor(bottom_row, cv2.COLOR_GRAY2BGR)
+            # merged_image = np.vstack((top_row, bottom_row)) 
 
-            combine_filter = cv2.cvtColor(combine_filter, cv2.COLOR_GRAY2BGR)
-            top_row = np.hstack((cv_img, combine_filter)) 
-            bottom_row = np.hstack((yellow_filter_roi, red_filter_roi)) 
-            bottom_row = cv2.cvtColor(bottom_row, cv2.COLOR_GRAY2BGR)
-            merged_image = np.vstack((top_row, bottom_row)) 
-
-            # [수정 6] imshow는 디버깅용. SSH 환경에서 느리면 주석 처리 하세요.
-            cv2.imshow("Merged Image", merged_image)
+            # cv2.imshow("Merged Image", merged_image)
             
             # [수정 7] waitKey 제거 (메인 루프에서 제어)
             # cv2.waitKey(1)
@@ -493,7 +485,7 @@ if __name__ == "__main__":
     
     class_sub = Class_sub()
 
-    # 초기 대기 화면 설정
+    # 초기 대기 화면 설정 (화면 출력을 안 하더라도 waitKey용으로 하나는 띄워야 함)
     img = np.ones((300, 500), dtype=np.uint8) * 255 
     cv2.imshow("readytogo", img)
     
