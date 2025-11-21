@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y \
 
 # 3. Python 라이브러리 설치
 # opencv-python은 위에서 설치했으므로 제거했습니다. numpy만 pip로 설치합니다.
-RUN pip3 install numpy
+RUN pip3 install numpy PyYAML rospkg
 
 # 4. 작업 디렉토리 생성
 WORKDIR /app
