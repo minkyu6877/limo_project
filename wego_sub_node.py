@@ -96,7 +96,10 @@ class Class_sub:
         self.steer_weight = 2.0      
         
         rospy.Subscriber("/scan", LaserScan, self.lidar_cb) 
-        rospy.Subscriber("/usb_cam/image_raw/compressed", CompressedImage, self.camera_cb) 
+        
+        # [★핵심 수정] Astra 카메라 토픽으로 변경 완료!
+        rospy.Subscriber("/camera/rgb/image_rect_color/compressed", CompressedImage, self.camera_cb) 
+        
         rospy.Subscriber("/path_", String, self.v2x_cb)
 
     def emergency(self): 
@@ -137,7 +140,6 @@ class Class_sub:
             self.lidar_flag = True
 
         for i, data in enumerate(self.msg.ranges):
-            # 거리 조건(min_dist) 적용하여 장애물 판단
             if 0 < data < self.min_dist and -self.scan_Rdgree < self.degrees[i] < self.scan_Ldgree:
                 obstacle.append(i)
                 self.dist_data = data
@@ -163,7 +165,7 @@ class Class_sub:
     
     def move_direction(self, last, first):
         if self.direction == "right":
-            self.center_list_left = [] # 메모리 누수 방지
+            self.center_list_left = [] 
             for i in range(first):
                 self.center_list_left.append(i)
             
@@ -176,7 +178,7 @@ class Class_sub:
                 self.speed = self.default_speed
 
         elif self.direction == "left":
-            self.center_list_right = [] # 메모리 누수 방지
+            self.center_list_right = [] 
             for i in range(len(self.msg.ranges)):
                 self.center_list_right.append(last+i)
             
@@ -364,7 +366,7 @@ class Class_sub:
             if self.v2x == "D":
                 self.camera_speed = 0 
             else :
-                self.camera_speed = 0.1
+                self.camera_speed = 0.15
                 self.v2x_flag = False 
                 self.mission_ABC = True
                 self.ABC_time = time()
@@ -385,7 +387,7 @@ class Class_sub:
         if current_time - self.mission3_count > 23.5 and current_time - self.mission3_count < 25.5:
             self.is_scan = True
             self.cmd_msg.angular.z = -0.1
-            self.camera_speed = 0.1
+            self.camera_speed = 0.15
             self.steer_weight = 1.7
         
         if current_time - self.mission3_count > 37.5 and current_time - self.mission3_count < 38.5:
