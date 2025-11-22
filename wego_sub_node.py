@@ -18,6 +18,7 @@ class Class_sub:
         self.cmd_msg = Twist() 
         self.bridge = CvBridge()
         
+        # 반응속도 30Hz
         self.rate = rospy.Rate(30) 
         
         self.camera_flag = False
@@ -31,27 +32,26 @@ class Class_sub:
         self.lidar_flag = False
         self.dist_data = 0
         self.direction = None
-
-        # [수정 1] ★★★ 여기가 핵심입니다! False -> True 로 변경
-        # 그래야 평소에도 라이다가 작동해서 장애물을 피합니다.
+        
+        # [안전] 장애물 감지 항상 켜둠
         self.is_scan = True 
     
         self.obstacle_ranges = []
         self.center_list_left = []
         self.center_list_right = []
 
-        # [수정 2] 시야각과 감지 거리를 늘려서 더 잘 피하게 설정
-        self.scan_Ldgree = 45   # 기존 25 -> 45 (더 넓게 봄)
+        self.scan_Ldgree = 45   # 시야각 넓힘
         self.scan_Rdgree = 45   
-        self.min_dist = 0.6     # 기존 0.5 -> 0.6 (더 미리 피함)
+        self.min_dist = 0.6     # 감지 거리 0.6m
 
+        # [속도] 모터 힘 부족 방지 (0.15)
         self.speed = 0
         self.angle = 0
-        self.default_speed = 0.1       
+        self.default_speed = 0.15      
         self.default_angle = 0.0
-        self.turning_speed = 0.08
-        self.backward_speed = -0.08
-        self.OBSTACLE_PERCEPTION_BOUNDARY = 5     # [수정 3] 8 -> 5 (점 5개만 감지돼도 바로 피함)
+        self.turning_speed = 0.1
+        self.backward_speed = -0.1
+        self.OBSTACLE_PERCEPTION_BOUNDARY = 5     
         self.ranges_length = None
         self.obstacle_exit = False 
 
@@ -75,9 +75,7 @@ class Class_sub:
 
         #-------------------------V2X-------------------------#
         self.v2x = "D"
-        self.frame_count = 0  
         self.last_time = time() 
-        self.fps = 0  
 
         #-------------------------HSV-------------------------#
         self.black_lower = np.array([102, 0, 60])
@@ -94,32 +92,24 @@ class Class_sub:
         #-------------------------ROI-------------------------#
         self.margin_x = 150
         self.margin_y = 350
-        self.camera_speed = 0.12     
+        self.camera_speed = 0.15   # 카메라 주행 속도
         self.steer_weight = 2.0      
         
         rospy.Subscriber("/scan", LaserScan, self.lidar_cb) 
         rospy.Subscriber("/usb_cam/image_raw/compressed", CompressedImage, self.camera_cb) 
         rospy.Subscriber("/path_", String, self.v2x_cb)
 
-
-    #-------------------------E M E R G E N C Y-------------------------------#
     def emergency(self): 
         self.flag6_count = 0
         self.mission3_count = 0
         self.is_scan = True
-        self.camera_speed = 0.1
+        self.camera_speed = 0.15
         self.steer_weight = 1.7
         self.start = True 
         print ("EMERGENCY ACTIVE")
 
-    #-------------------------C A L L B A C K-------------------------------#
     def lidar_cb(self, msg): 
         self.msg = msg 
-        if len(self.obstacle_ranges) > self.OBSTACLE_PERCEPTION_BOUNDARY:
-            self.obstacle_exit = True
-        else:
-            self.obstacle_exit = False
-        self.obstacle_ranges = []
 
     def camera_cb(self, msg):  
         if msg != None:
@@ -131,9 +121,8 @@ class Class_sub:
     def v2x_cb(self, msg):
         if msg != None:
             self.v2x = msg.data
-            print(f"V2X Signal Received: {msg.data}")
+            # print(f"V2X: {msg.data}")
             
-    #--------------------------------L i D A R----------------------------------#     
     def LiDAR_scan(self):
         if self.msg is None:
             return 0, 0, 0, 0
@@ -148,7 +137,6 @@ class Class_sub:
             self.lidar_flag = True
 
         for i, data in enumerate(self.msg.ranges):
-            # [수정 4] 감지 거리(min_dist) 적용
             if 0 < data < self.min_dist and -self.scan_Rdgree < self.degrees[i] < self.scan_Ldgree:
                 obstacle.append(i)
                 self.dist_data = data
@@ -159,16 +147,22 @@ class Class_sub:
             first_dst = first
             last = obstacle[-1]
             last_dst = self.ranges_length - last
+            
             self.obstacle_ranges = self.msg.ranges[first: last + 1]
+            if len(self.obstacle_ranges) > self.OBSTACLE_PERCEPTION_BOUNDARY:
+                self.obstacle_exit = True
+            else:
+                self.obstacle_exit = False
         else:
             self.obstacle_flag = False
+            self.obstacle_exit = False
             first, first_dst, last, last_dst = 0, 0, 0, 0
         
         return first, first_dst, last, last_dst
     
     def move_direction(self, last, first):
         if self.direction == "right":
-            self.center_list_left = [] 
+            self.center_list_left = [] # 메모리 누수 방지
             for i in range(first):
                 self.center_list_left.append(i)
             
@@ -177,9 +171,11 @@ class Class_sub:
                 center_angle_left = -self.msg.angle_increment * Lcenter
                 self.angle = center_angle_left/3.0
                 self.speed = self.default_speed * 0.9
+            else: 
+                self.speed = self.default_speed
 
         elif self.direction == "left":
-            self.center_list_right = []
+            self.center_list_right = [] # 메모리 누수 방지
             for i in range(len(self.msg.ranges)):
                 self.center_list_right.append(last+i)
             
@@ -190,6 +186,8 @@ class Class_sub:
                 center_angle_right = self.msg.angle_increment * Rcenter
                 self.angle = center_angle_right/4.0  
                 self.speed = self.default_speed * 0.9
+            else:
+                self.speed = self.default_speed
 
         elif self.direction == "back":
             self.angle = self.default_angle 
@@ -207,14 +205,11 @@ class Class_sub:
                 self.direction = "left"
             else:
                 self.direction = "back"
-                print("back")
         else:
             self.direction = "front"
 
-    #----------------------------------C A M E R A------------------------------------#
     def lkas(self):
         if self.camera_flag == True:
-            
             cv_img = self.bridge.compressed_imgmsg_to_cv2(self.camera_msg)
             y, x, channel = cv_img.shape
             hsv_img = cv2.cvtColor(cv_img, cv2.COLOR_BGR2HSV)
@@ -238,7 +233,6 @@ class Class_sub:
             combine_filter = cv2.bitwise_or(filter, black3_filter)
             and_img = cv2.bitwise_and(cv_img, cv_img, mask=combine_filter)
 
-            #--------------------------FLAG-----------------------------------#
             if red_pixel > 30000 and self.prev_red == False:
                 self.flag4 = True
                 self.current_red = True
@@ -247,7 +241,6 @@ class Class_sub:
                  self.current_red = False
             
             if not self.current_red and self.prev_red:
-                print("----------------mission5-----------------")
                 self.prev_red = False
 
             if yellow_pixel > 7000:
@@ -270,7 +263,6 @@ class Class_sub:
                 self.flag6_count = 1
                 self.prev = False
 
-            #---------------------------------------------------------------#
             src_pt1 = (30, y)
             src_pt2 = (self.margin_x, self.margin_y) 
             src_pt3 = (x - self.margin_x, self.margin_y) 
@@ -329,8 +321,9 @@ class Class_sub:
                     pass
             except:
                 pass
+            
+            # [최적화] 랙 유발 imshow 주석 처리 완료
 
-    #---------------------------MAIN------------------------------------#
     def ctrl(self):
         class_sub.lkas() 
 
@@ -338,29 +331,26 @@ class Class_sub:
             self.mission3_count = time()
             self.start = False
 
-        # change lidar
         if self.flag4: 
-            print("----------------mission4-----------------")
             self.OBSTACLE_PERCEPTION_BOUNDARY = 10
             self.scan_Ldgree = 50
             self.flag4 = False
 
         if self.flag6:
-            print("----------------mission6-----------------")
             self.OBSTACLE_PERCEPTION_BOUNDARY = 15
             self.scan_Ldgree = 25
             self.v2x_flag = True
             self.flag6 = False 
             
-        # [수정 5] self.is_scan이 항상 True이므로 라이다가 항상 작동함
         if self.is_scan == True:
             first, first_dst, last, last_dst = self.LiDAR_scan()
             self.compare_space(first_dst, last_dst)
             self.move_direction(last, first)
 
-        # final cmd_vel
+        # [상태 확인 출력]
+        # print(f"CmdVel -> Lin: {self.cmd_msg.linear.x:.2f}, Ang: {self.cmd_msg.angular.z:.2f}")
+
         if self.obstacle_flag == True: 
-            # print(f"AVOIDING! Angle: {self.angle}, Speed: {self.speed}")
             self.cmd_msg.linear.x = self.speed
             self.cmd_msg.angular.z = self.angle
         else :
@@ -369,7 +359,6 @@ class Class_sub:
 
         current_time = time()
 
-        ## modify 
         if self.v2x_flag: 
             if self.v2x == "D":
                 self.camera_speed = 0 
@@ -389,14 +378,10 @@ class Class_sub:
             elif current_time - self.ABC_time < 7 and current_time - self.ABC_time > 6:
                 if self.v2x == "C":
                     self.cmd_msg.angular.z = -0.15 
-
             elif self.ABC_time - current_time > 7 and self.ABC_time > 0:
                 self.mission_ABC = False
         
-        # Mission 3 시간 제어 부분 유지
         if current_time - self.mission3_count > 23.5 and current_time - self.mission3_count < 25.5:
-            if self.is_scan == False:
-                print("----------------mission3-----------------")
             self.is_scan = True
             self.cmd_msg.angular.z = -0.1
             self.camera_speed = 0.15
@@ -405,14 +390,23 @@ class Class_sub:
         if current_time - self.mission3_count > 37.5 and current_time - self.mission3_count < 38.5:
             self.cmd_msg.angular.z = -0.25
 
+        # =================================================================
+        # [★핵심 수정] 우회전 고장 방지 (하드 리밋)
+        # 0.35 rad (약 20도) 이상 꺾으려고 하면 강제로 0.35로 고정함
+        # =================================================================
+        SAFE_LIMIT = 0.35 
+
+        if self.cmd_msg.angular.z < -SAFE_LIMIT: 
+            self.cmd_msg.angular.z = -SAFE_LIMIT
+        elif self.cmd_msg.angular.z > SAFE_LIMIT:
+            self.cmd_msg.angular.z = SAFE_LIMIT
+
         self.pub.publish(self.cmd_msg)
         self.rate.sleep()
 
 
 if __name__ == "__main__":
-    
     class_sub = Class_sub()
-
     img = np.ones((300, 500), dtype=np.uint8) * 255 
     cv2.imshow("readytogo", img)
     
@@ -425,7 +419,6 @@ if __name__ == "__main__":
     start_driving = False
     while not rospy.is_shutdown():
         key = cv2.waitKey(1) & 0xFF
-        
         if key == ord('s'):
             print("LOG: Start Driving...")
             start_driving = True
@@ -438,7 +431,6 @@ if __name__ == "__main__":
     if start_driving:
         while not rospy.is_shutdown():
             class_sub.ctrl()
-            
             key = cv2.waitKey(1) & 0xFF 
             if key == ord('k'):
                 print("LOG: Exiting by user request...")
