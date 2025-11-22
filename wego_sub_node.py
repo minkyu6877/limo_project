@@ -42,14 +42,14 @@ class Class_sub:
 
         self.scan_Ldgree = 45   # 시야각 넓힘
         self.scan_Rdgree = 45   
-        self.min_dist = 0.6     # 감지 거리 0.6m
+        self.min_dist = 0.9     # [수정] 감지 거리 0.9m (여유 있게 회피)
 
-        # [속도] 모터 힘 부족 방지 (0.15)
+        # [수정] 속도를 0.1로 안전하게 감속
         self.speed = 0
         self.angle = 0
-        self.default_speed = 0.15      
+        self.default_speed = 0.1       
         self.default_angle = 0.0
-        self.turning_speed = 0.1
+        self.turning_speed = 0.08
         self.backward_speed = -0.1
         self.OBSTACLE_PERCEPTION_BOUNDARY = 5     
         self.ranges_length = None
@@ -92,7 +92,7 @@ class Class_sub:
         #-------------------------ROI-------------------------#
         self.margin_x = 150
         self.margin_y = 350
-        self.camera_speed = 0.15   # 카메라 주행 속도
+        self.camera_speed = 0.1    # [수정] 카메라 주행 속도도 0.1로 맞춤
         self.steer_weight = 2.0      
         
         rospy.Subscriber("/scan", LaserScan, self.lidar_cb) 
@@ -103,7 +103,7 @@ class Class_sub:
         self.flag6_count = 0
         self.mission3_count = 0
         self.is_scan = True
-        self.camera_speed = 0.15
+        self.camera_speed = 0.1
         self.steer_weight = 1.7
         self.start = True 
         print ("EMERGENCY ACTIVE")
@@ -137,6 +137,7 @@ class Class_sub:
             self.lidar_flag = True
 
         for i, data in enumerate(self.msg.ranges):
+            # 거리 조건(min_dist) 적용하여 장애물 판단
             if 0 < data < self.min_dist and -self.scan_Rdgree < self.degrees[i] < self.scan_Ldgree:
                 obstacle.append(i)
                 self.dist_data = data
@@ -347,8 +348,8 @@ class Class_sub:
             self.compare_space(first_dst, last_dst)
             self.move_direction(last, first)
 
-        # [상태 확인 출력]
-        # print(f"CmdVel -> Lin: {self.cmd_msg.linear.x:.2f}, Ang: {self.cmd_msg.angular.z:.2f}")
+        # [디버깅용 출력]
+        print(f"OBS: {self.obstacle_flag}, Dir: {self.direction}, Speed: {self.speed:.2f}, Steer: {self.steer:.2f}")
 
         if self.obstacle_flag == True: 
             self.cmd_msg.linear.x = self.speed
@@ -363,7 +364,7 @@ class Class_sub:
             if self.v2x == "D":
                 self.camera_speed = 0 
             else :
-                self.camera_speed = 0.15
+                self.camera_speed = 0.1
                 self.v2x_flag = False 
                 self.mission_ABC = True
                 self.ABC_time = time()
@@ -384,7 +385,7 @@ class Class_sub:
         if current_time - self.mission3_count > 23.5 and current_time - self.mission3_count < 25.5:
             self.is_scan = True
             self.cmd_msg.angular.z = -0.1
-            self.camera_speed = 0.15
+            self.camera_speed = 0.1
             self.steer_weight = 1.7
         
         if current_time - self.mission3_count > 37.5 and current_time - self.mission3_count < 38.5:
