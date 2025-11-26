@@ -18,435 +18,162 @@ class Class_sub:
         self.cmd_msg = Twist() 
         self.bridge = CvBridge()
         
-        # 반응속도 30Hz
-        self.rate = rospy.Rate(30) 
+        # 제어 주기 20Hz (안정적)
+        self.rate = rospy.Rate(20) 
         
         self.camera_flag = False
-        self.e_stop_flag = False
-        self.obstacle_flag = False
-        self.steer = 0
         self.start = True
 
         #------------------Lidar-------------------------#
         self.msg = None
-        self.lidar_flag = False
-        self.dist_data = 0
-        self.direction = None
-        
-        # [안전] 장애물 감지 항상 켜둠
-        self.is_scan = True 
-    
-        self.obstacle_ranges = []
-        self.center_list_left = []
-        self.center_list_right = []
+        self.is_scan = False 
+        self.obstacle_flag = False # 장애물 감지 여부
 
-        self.scan_Ldgree = 45   # 시야각 넓힘
+        # [수정] 장애물 감지 설정 (확실하게 감지하도록)
+        self.scan_Ldgree = 45   # 좌우 45도 (총 90도) 감시
         self.scan_Rdgree = 45   
-        self.min_dist = 0.9     # [수정] 감지 거리 0.9m (여유 있게 회피)
+        self.min_dist = 0.7     # 0.7m 이내 들어오면 무조건 회피 시작
 
-        # [수정] 속도를 0.1로 안전하게 감속
+        # [수정] 속도 설정 (안전하게)
+        self.default_speed = 0.12 
+        self.camera_speed = 0.12 
+        
         self.speed = 0
         self.angle = 0
-        self.default_speed = 0.1       
-        self.default_angle = 0.0
-        self.turning_speed = 0.08
-        self.backward_speed = -0.1
-        self.OBSTACLE_PERCEPTION_BOUNDARY = 5     
-        self.ranges_length = None
-        self.obstacle_exit = False 
+        self.steer = 0
 
-        #----------------------flag-----------------------# 
-        self.flag4 = False      
-        self.flag6 = False      
-        self.flag6_count = 0    
+        #------------------Flag-------------------------#
         self.v2x_flag = False
-        self.prev = False       
-        self.current = False    
-
-        self.mission_ABC = False 
-        self.prev_red = False    
-        self.current_red = False 
-        self.yellow_long_detection = False  
-
-        #---------------------시간관련변수---------------------#
-        self.ABC_time = 0  
-        self.mission3_count = 0  
-        self.count = 0           
-
-        #-------------------------V2X-------------------------#
         self.v2x = "D"
-        self.last_time = time() 
 
-        #-------------------------HSV-------------------------#
-        self.black_lower = np.array([102, 0, 60])
-        self.black_upper = np.array([164, 86, 136])
-        self.black2_lower = np.array([126, 25, 45])
-        self.black2_upper = np.array([167, 89, 108])
-        self.black3_lower = np.array([125, 29, 26])
-        self.black3_upper = np.array([171, 100, 78])
-        self.yellow_lower = np.array([14, 17, 153])
-        self.yellow_upper = np.array([35, 167, 255])
-        self.red_lower = np.array([167, 80, 115])
-        self.red_upper = np.array([179, 205, 255])
+        # [HSV] 노란색/흰색/검은색 (현장 조명에 맞춰야 함)
+        self.black_lower = np.array([0, 0, 0])
+        self.black_upper = np.array([180, 255, 60])
+        self.yellow_lower = np.array([10, 50, 50])
+        self.yellow_upper = np.array([40, 255, 255])
+        
+        self.steer_weight = 2.0 
 
-        #-------------------------ROI-------------------------#
-        self.margin_x = 150
-        self.margin_y = 350
-        self.camera_speed = 0.1    # [수정] 카메라 주행 속도도 0.1로 맞춤
-        self.steer_weight = 2.0      
-        
-        rospy.Subscriber("/scan", LaserScan, self.lidar_cb) 
-        
-        # [★핵심 수정] Astra 카메라 토픽으로 변경 완료!
-        rospy.Subscriber("/camera/rgb/image_rect_color/compressed", CompressedImage, self.camera_cb) 
-        
+        rospy.Subscriber("/scan", LaserScan, self.lidar_cb)
+        rospy.Subscriber("/usb_cam/image_raw/compressed", CompressedImage, self.camera_cb)
         rospy.Subscriber("/path_", String, self.v2x_cb)
 
-    def emergency(self): 
-        self.flag6_count = 0
-        self.mission3_count = 0
-        self.is_scan = True
-        self.camera_speed = 0.1
-        self.steer_weight = 1.7
-        self.start = True 
-        print ("EMERGENCY ACTIVE")
-
-    def lidar_cb(self, msg): 
-        self.msg = msg 
-
-    def camera_cb(self, msg):  
-        if msg != None:
+    def lidar_cb(self, msg): self.msg = msg 
+    def camera_cb(self, msg):
+        if msg is not None:
             self.camera_msg = msg
             self.camera_flag = True
-        else :
-            self.camera_flag = False
-
+        else: self.camera_flag = False
     def v2x_cb(self, msg):
-        if msg != None:
-            self.v2x = msg.data
-            # print(f"V2X: {msg.data}")
-            
-    def LiDAR_scan(self):
-        if self.msg is None:
-            return 0, 0, 0, 0
+        if msg is not None: self.v2x = msg.data
 
-        obstacle = []
-        if self.lidar_flag == False:
-            self.degrees = [
-                (self.msg.angle_min + (i * self.msg.angle_increment)) * 180 / math.pi
-                for i, data in enumerate(self.msg.ranges)
-            ]
-            self.ranges_length = len(self.msg.ranges)
-            self.lidar_flag = True
-
-        for i, data in enumerate(self.msg.ranges):
-            if 0 < data < self.min_dist and -self.scan_Rdgree < self.degrees[i] < self.scan_Ldgree:
-                obstacle.append(i)
-                self.dist_data = data
-
-        if obstacle:
-            self.obstacle_flag = True
-            first = obstacle[0]
-            first_dst = first
-            last = obstacle[-1]
-            last_dst = self.ranges_length - last
-            
-            self.obstacle_ranges = self.msg.ranges[first: last + 1]
-            if len(self.obstacle_ranges) > self.OBSTACLE_PERCEPTION_BOUNDARY:
-                self.obstacle_exit = True
-            else:
-                self.obstacle_exit = False
-        else:
-            self.obstacle_flag = False
-            self.obstacle_exit = False
-            first, first_dst, last, last_dst = 0, 0, 0, 0
+    # ================= [핵심 수정] 장애물 감지 로직 ================= #
+    def check_obstacle(self):
+        if self.msg is None: return False
         
-        return first, first_dst, last, last_dst
-    
-    def move_direction(self, last, first):
-        if self.direction == "right":
-            self.center_list_left = [] 
-            for i in range(first):
-                self.center_list_left.append(i)
-            
-            if self.center_list_left:
-                Lcenter = self.center_list_left[math.floor(first/2)]
-                center_angle_left = -self.msg.angle_increment * Lcenter
-                self.angle = center_angle_left/3.0
-                self.speed = self.default_speed * 0.9
-            else: 
-                self.speed = self.default_speed
-
-        elif self.direction == "left":
-            self.center_list_right = [] 
-            for i in range(len(self.msg.ranges)):
-                self.center_list_right.append(last+i)
-            
-            if self.center_list_right:
-                Rcenter = self.center_list_right[
-                    math.floor(last + (self.ranges_length - last)/2)
-                ]
-                center_angle_right = self.msg.angle_increment * Rcenter
-                self.angle = center_angle_right/4.0  
-                self.speed = self.default_speed * 0.9
-            else:
-                self.speed = self.default_speed
-
-        elif self.direction == "back":
-            self.angle = self.default_angle 
-            self.speed = self.backward_speed 
-
+        # 전방 90도(-45~45) 영역의 거리 데이터 확인
+        ranges = np.array(self.msg.ranges)
+        degrees = [(self.msg.angle_min + i * self.msg.angle_increment) * 180/math.pi for i in range(len(ranges))]
+        
+        obstacle_cnt = 0
+        for i, dist in enumerate(ranges):
+            if -self.scan_Rdgree < degrees[i] < self.scan_Ldgree:
+                # 0.1m(너무 가까운 노이즈) ~ 0.7m(감지거리) 사이 장애물 카운트
+                if 0.1 < dist < self.min_dist:
+                    obstacle_cnt += 1
+        
+        # 점이 5개 이상 감지되면 장애물로 판단
+        if obstacle_cnt > 5:
+            return True
         else:
-            self.angle = self.default_angle
-            self.speed = self.default_speed
+            return False
 
-    def compare_space(self, first_dst, last_dst):
-        if self.obstacle_exit == True:
-            if first_dst > last_dst: 
-                self.direction = "right"
-            elif first_dst <= last_dst: 
-                self.direction = "left"
-            else:
-                self.direction = "back"
+    # ================= [핵심 수정] 장애물 회피 로직 (Gap Following) ================= #
+    def avoid_obstacle(self):
+        if self.msg is None: return
+
+        ranges = np.array(self.msg.ranges)
+        degrees = [(self.msg.angle_min + i * self.msg.angle_increment) * 180/math.pi for i in range(len(ranges))]
+        
+        left_space = 0
+        right_space = 0
+        
+        # 왼쪽(-45~0도)과 오른쪽(0~45도) 중 어디가 더 넓은지 비교
+        # (거리가 멀수록 점수가 높음)
+        for i, dist in enumerate(ranges):
+            angle = degrees[i]
+            if 0 < dist < 2.0: # 유효 거리 2m 이내만 계산
+                if 0 < angle < self.scan_Ldgree: # 왼쪽
+                    left_space += dist
+                elif -self.scan_Rdgree < angle < 0: # 오른쪽
+                    right_space += dist
+        
+        # 더 넓은 쪽으로 핸들 꺾기
+        if left_space > right_space:
+            self.angle = 0.5  # 좌회전 (약 30도)
         else:
-            self.direction = "front"
+            self.angle = -0.5 # 우회전
+            
+        self.speed = self.default_speed # 속도 유지 (멈추지 않게)
 
+    # ================= 카메라 처리 (기존 최적화 유지) ================= #
     def lkas(self):
-        if self.camera_flag == True:
+        if not self.camera_flag: return
+
+        try:
             cv_img = self.bridge.compressed_imgmsg_to_cv2(self.camera_msg)
-            y, x, channel = cv_img.shape
+            cv_img = cv2.resize(cv_img, (320, 240)) # 리사이즈 (속도 향상)
+            h, w = cv_img.shape[:2]
             hsv_img = cv2.cvtColor(cv_img, cv2.COLOR_BGR2HSV)
 
-            red_filter = cv2.inRange(hsv_img, self.red_lower, self.red_upper)
-            roi_mask = np.zeros_like(red_filter)
-            roi_mask[200:y, 0:x] = 255
-            red_filter_roi = cv2.bitwise_and(red_filter, roi_mask)
-            red_pixel = cv2.countNonZero(red_filter_roi)
-
-            yellow_filter = cv2.inRange(hsv_img, self.yellow_lower, self.yellow_upper)
-            roi_mask = np.zeros_like(yellow_filter) 
-            roi_mask[200:y, 0:x] = 255 
-            yellow_filter_roi = cv2.bitwise_and(yellow_filter, roi_mask)
-            yellow_pixel = cv2.countNonZero(yellow_filter_roi)
+            # 차선 검출 (검정색 or 노란색 or 흰색 - 필요에 따라 수정)
+            # 지금은 검정색(도로) 인식으로 되어 있음
+            mask = cv2.inRange(hsv_img, self.black_lower, self.black_upper)
             
-            black_filter = cv2.inRange(hsv_img, self.black_lower, self.black_upper)
-            black2_filter = cv2.inRange(hsv_img, self.black2_lower, self.black2_upper)
-            black3_filter = cv2.inRange(hsv_img, self.black3_lower, self.black3_upper)
-            filter = cv2.bitwise_or(black_filter, black2_filter)
-            combine_filter = cv2.bitwise_or(filter, black3_filter)
-            and_img = cv2.bitwise_and(cv_img, cv_img, mask=combine_filter)
-
-            if red_pixel > 30000 and self.prev_red == False:
-                self.flag4 = True
-                self.current_red = True
-                self.prev_red = True
-            elif red_pixel < 2500:
-                 self.current_red = False
+            # ROI (하단부만)
+            mask_roi = mask[int(h*0.6):, :] 
             
-            if not self.current_red and self.prev_red:
-                self.prev_red = False
-
-            if yellow_pixel > 7000:
-                self.yellow_long_detection = True
-            
-            if self.yellow_long_detection:
-                if yellow_pixel > 1500:
-                    self.count = self.count + 1
-                else: 
-                    self.count = 0
-        
-            if self.count > 30: 
-                self.current = True
-                self.prev = True
+            # 무게 중심 찾기 (가장 단순하고 빠른 방법)
+            M = cv2.moments(mask_roi)
+            if M['m00'] > 0:
+                cx = int(M['m10'] / M['m00'])
+                err = (w // 2) - cx
+                self.steer = (err * math.pi / w) * self.steer_weight
             else:
-                self.current = False
+                self.steer = 0
+        except:
+            pass
 
-            if self.prev and not self.current and self.flag6_count == 0: 
-                self.flag6 = True
-                self.flag6_count = 1
-                self.prev = False
-
-            src_pt1 = (30, y)
-            src_pt2 = (self.margin_x, self.margin_y) 
-            src_pt3 = (x - self.margin_x, self.margin_y) 
-            src_pt4 = (x - 30, y)
-            src_pts = np.float32([src_pt1, src_pt2, src_pt3, src_pt4])
-
-            dst_margin_x = 120
-            dst_pt1 = (dst_margin_x, y)
-            dst_pt2 = (dst_margin_x, 0)
-            dst_pt3 = (x - dst_margin_x, 0)
-            dst_pt4 = (x - dst_margin_x, y)
-            dst_pts = np.float32([dst_pt1, dst_pt2, dst_pt3, dst_pt4])
-
-            matrix = cv2.getPerspectiveTransform(src_pts, dst_pts)
-            warp_img = cv2.warpPerspective(and_img, matrix, (x, y))
-            gray_img = cv2.cvtColor(warp_img, cv2.COLOR_BGR2GRAY)
-            bin_img = np.zeros_like(gray_img)
-            bin_img[gray_img != 0] = 1
-            center_index = x // 2
-            window_num = 8
-            window_y_size = y // window_num 
-            left_indices = []
-            right_indices = []
-
-            for i in range(0, window_num):
-                upper_y = y - window_y_size * (i + 1)
-                lower_y = y - window_y_size * i
-
-                left_window = bin_img[upper_y:lower_y, :center_index]
-                left_histogram = np.sum(left_window, axis=0)
-                left_histogram[left_histogram < 40] = 0
-
-                right_window = bin_img[upper_y:lower_y, center_index:]
-                right_histogram = np.sum(right_window, axis=0)
-                right_histogram[right_histogram < 40] = 0
-
-                try:
-                    left_nonzero = np.nonzero(left_histogram)[0]
-                    left_avg_index = (left_nonzero[0] + left_nonzero[-1]) // 2
-                    left_indices.append(left_avg_index)
-
-                    right_nonzero = np.nonzero(right_histogram)[0]
-                    right_avg_index = (right_nonzero[0] + right_nonzero[-1]) // 2 + center_index
-                    right_indices.append(right_avg_index)
-                except :
-                    pass
-            
-            try:
-                if left_indices and right_indices:
-                    left_avg = sum(left_indices) / len(left_indices)
-                    right_avg = sum(right_indices) / len(right_indices)
-                    avg_indices = int((left_avg + right_avg) // 2)
-                    error_index = center_index - avg_indices
-                    self.steer = (error_index * math.pi / x) * self.steer_weight
-                else:
-                    pass
-            except:
-                pass
-            
-            # [최적화] 랙 유발 imshow 주석 처리 완료
-
+    # ================= 메인 제어 ================= #
     def ctrl(self):
-        class_sub.lkas() 
+        # 1. 카메라 영상 처리 (항상 수행)
+        self.lkas()
 
-        if self.start: 
-            self.mission3_count = time()
-            self.start = False
+        # 2. 장애물 확인
+        self.obstacle_flag = self.check_obstacle()
 
-        if self.flag4: 
-            self.OBSTACLE_PERCEPTION_BOUNDARY = 10
-            self.scan_Ldgree = 50
-            self.flag4 = False
-
-        if self.flag6:
-            self.OBSTACLE_PERCEPTION_BOUNDARY = 15
-            self.scan_Ldgree = 25
-            self.v2x_flag = True
-            self.flag6 = False 
-            
-        if self.is_scan == True:
-            first, first_dst, last, last_dst = self.LiDAR_scan()
-            self.compare_space(first_dst, last_dst)
-            self.move_direction(last, first)
-
-        # [디버깅용 출력]
-        print(f"OBS: {self.obstacle_flag}, Dir: {self.direction}, Speed: {self.speed:.2f}, Steer: {self.steer:.2f}")
-
-        if self.obstacle_flag == True: 
+        if self.obstacle_flag:
+            # 장애물 있으면 -> 라이다 회피 주행
+            self.avoid_obstacle()
             self.cmd_msg.linear.x = self.speed
             self.cmd_msg.angular.z = self.angle
-        else :
+            # print("Avoid Mode!")
+        else:
+            # 장애물 없으면 -> 카메라 라인트레이싱
             self.cmd_msg.linear.x = self.camera_speed
             self.cmd_msg.angular.z = self.steer
-
-        current_time = time()
-
-        if self.v2x_flag: 
-            if self.v2x == "D":
-                self.camera_speed = 0 
-            else :
-                self.camera_speed = 0.15
-                self.v2x_flag = False 
-                self.mission_ABC = True
-                self.ABC_time = time()
-
-        if self.mission_ABC:
-            if current_time - self.ABC_time < 2 and current_time - self.ABC_time > 0:
-                if self.v2x == "A":
-                    self.cmd_msg.angular.z = 0.55
-            elif current_time - self.ABC_time < 4 and current_time - self.ABC_time > 2 :
-                if self.v2x == "B":
-                    self.cmd_msg.angular.z = 0.25 
-            elif current_time - self.ABC_time < 7 and current_time - self.ABC_time > 6:
-                if self.v2x == "C":
-                    self.cmd_msg.angular.z = -0.15 
-            elif self.ABC_time - current_time > 7 and self.ABC_time > 0:
-                self.mission_ABC = False
-        
-        if current_time - self.mission3_count > 23.5 and current_time - self.mission3_count < 25.5:
-            self.is_scan = True
-            self.cmd_msg.angular.z = -0.1
-            self.camera_speed = 0.15
-            self.steer_weight = 1.7
-        
-        if current_time - self.mission3_count > 37.5 and current_time - self.mission3_count < 38.5:
-            self.cmd_msg.angular.z = -0.25
-
-        # =================================================================
-        # [★핵심 수정] 우회전 고장 방지 (하드 리밋)
-        # 0.35 rad (약 20도) 이상 꺾으려고 하면 강제로 0.35로 고정함
-        # =================================================================
-        SAFE_LIMIT = 0.35 
-
-        if self.cmd_msg.angular.z < -SAFE_LIMIT: 
-            self.cmd_msg.angular.z = -SAFE_LIMIT
-        elif self.cmd_msg.angular.z > SAFE_LIMIT:
-            self.cmd_msg.angular.z = SAFE_LIMIT
+            # print("Line Mode")
 
         self.pub.publish(self.cmd_msg)
         self.rate.sleep()
 
-
 if __name__ == "__main__":
     class_sub = Class_sub()
-    img = np.ones((300, 500), dtype=np.uint8) * 255 
-    cv2.imshow("readytogo", img)
     
-    print("========================================")
-    print(" [S] Start Driving")
-    print(" [K] Kill Process (Exit)")
-    print(" [E] Emergency Stop (Reset Mission)")
-    print("========================================")
+    try:
+        input("Press Enter to Start...")
+    except:
+        pass
 
-    start_driving = False
     while not rospy.is_shutdown():
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord('s'):
-            print("LOG: Start Driving...")
-            start_driving = True
-            break
-        elif key == ord('k'):
-            print("LOG: Process Killed.")
-            start_driving = False
-            break
-
-    if start_driving:
-        while not rospy.is_shutdown():
-            class_sub.ctrl()
-            key = cv2.waitKey(1) & 0xFF 
-            if key == ord('k'):
-                print("LOG: Exiting by user request...")
-                break
-            elif key == ord('e'):
-                print("LOG: Emergency Function Called!")
-                class_sub.emergency()
-
-        stop_msg = Twist()
-        stop_msg.linear.x = 0
-        stop_msg.angular.z = 0
-        class_sub.pub.publish(stop_msg)
-        print("LOG: Robot Stopped Safely.")
-
-    cv2.destroyAllWindows()
-    rospy.signal_shutdown("Finished")
+        class_sub.ctrl()
