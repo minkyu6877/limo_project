@@ -43,9 +43,9 @@ class Class_sub:
         self.center_list_left = []
         self.center_list_right = []
 
-        self.scan_Ldgree = 25   # decrease corn 왼쪽 스캔 각 
-        self.scan_Rdgree = 25   # 오른쪽 스캔 각
-        self.min_dist = 0.5
+        self.scan_Ldgree = 45   # decrease corn 왼쪽 스캔 각 
+        self.scan_Rdgree = 45   # 오른쪽 스캔 각
+        self.min_dist = 0.75
 
         self.speed = 0
         self.angle = 0
