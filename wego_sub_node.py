@@ -49,7 +49,7 @@ class Class_sub:
 
         self.speed = 0
         self.angle = 0
-        self.default_speed = 0.15
+        self.default_speed = 0.10
         self.default_angle = 0.0
         self.turning_speed = 0.08
         self.backward_speed = -0.08
@@ -108,8 +108,8 @@ class Class_sub:
         self.margin_x = 150
         self.margin_y = 350
 
-        self.camera_speed = 0.3
-        self.steer_weight = 2.5
+        self.camera_speed = 0.13
+        self.steer_weight = 3.5
         
         rospy.Subscriber("/scan", LaserScan, self.lidar_cb) # 2. node 역할 설정
         rospy.Subscriber("/usb_cam/image_raw/compressed", CompressedImage, self.camera_cb) # 2. node 역할 설정
