@@ -480,7 +480,7 @@ class Class_sub:
             self.camera_speed = 0.13
             self.steer_weight = 3.5
         
-        if current_time - self.mission3_count > 37.5 and current_time - self.mission3_count < 38.5:
+        #if current_time - self.mission3_count > 37.5 and current_time - self.mission3_count < 38.5:
             #self.cmd_msg.angular.z = -0.25
 
         # B pass, C pass 주석 처리 됨 (필요시 해제)
