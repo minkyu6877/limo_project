@@ -53,7 +53,7 @@ class Class_sub:
         self.default_angle = 0.0
         self.turning_speed = 0.08
         self.backward_speed = -0.08
-        self.OBSTACLE_PERCEPTION_BOUNDARY = 5     # decrease corn 조건문에서 낮추면 장애물 많이 감지 
+        self.OBSTACLE_PERCEPTION_BOUNDARY = 3    # decrease corn 조건문에서 낮추면 장애물 많이 감지 
         self.ranges_length = None
         self.obstacle_exit = False # 초기화 추가
 
