@@ -476,7 +476,7 @@ class Class_sub:
             if self.is_scan == False:
                 print("----------------mission3-----------------")
             self.is_scan = True
-            self.cmd_msg.angular.z = -0.1
+            self.cmd_msg.angular.z = -0.35
             self.camera_speed = 0.13
             self.steer_weight = 3.5
         
