@@ -472,7 +472,7 @@ class Class_sub:
         #---------------------------------------OBSTACLE AVOIDANCE--------------------------------------#  
 
         # A pass ==================================================================================
-        if current_time - self.mission3_count > 46 and current_time - self.mission3_count < 50:
+        if current_time - self.mission3_count > 53 and current_time - self.mission3_count < 60:
             if self.is_scan == False:
                 print("----------------mission3-----------------")
             self.is_scan = True
