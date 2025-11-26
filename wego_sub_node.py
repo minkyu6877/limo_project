@@ -472,15 +472,15 @@ class Class_sub:
         #---------------------------------------OBSTACLE AVOIDANCE--------------------------------------#  
 
         # A pass ==================================================================================
-        if current_time - self.mission3_count > 53 and current_time - self.mission3_count < 60:
+        if current_time - self.mission3_count > 53 and current_time - self.mission3_count < 55:
             if self.is_scan == False:
                 print("----------------mission3-----------------")
             self.is_scan = True
-            self.cmd_msg.angular.z = -0.35
+            self.cmd_msg.angular.z = -0.30
             self.camera_speed = 0.13
             self.steer_weight = 3.5
         
-        #if current_time - self.mission3_count > 37.5 and current_time - self.mission3_count < 38.5:
+        if current_time - self.mission3_count > 37.5 and current_time - self.mission3_count < 38.5:
             #self.cmd_msg.angular.z = -0.25
 
         # B pass, C pass 주석 처리 됨 (필요시 해제)
