@@ -43,9 +43,9 @@ class Class_sub:
         self.center_list_left = []
         self.center_list_right = []
 
-        self.scan_Ldgree = 45   # decrease corn 왼쪽 스캔 각 
-        self.scan_Rdgree = 45   # 오른쪽 스캔 각
-        self.min_dist = 0.75
+        self.scan_Ldgree = 50   # decrease corn 왼쪽 스캔 각 
+        self.scan_Rdgree = 50   # 오른쪽 스캔 각
+        self.min_dist = 0.7
 
         self.speed = 0
         self.angle = 0
@@ -410,8 +410,9 @@ class Class_sub:
         if self.flag4: 
             print("----------------mission4-----------------")
             ## chage lidar parameta
-            self.OBSTACLE_PERCEPTION_BOUNDARY = 10
-            self.scan_Ldgree = 50
+            self.default_speed=0.1
+            self.OBSTACLE_PERCEPTION_BOUNDARY = 2
+            self.scan_Ldgree = 60
             self.flag4 = False
 
         if self.flag6:
