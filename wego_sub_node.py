@@ -259,7 +259,7 @@ class Class_sub:
 
             #--------------------------FLAG-----------------------------------#
             #================flag4===============#
-            if red_pixel > 30000 and self.prev_red == False:
+            if red_pixel > 20000 and self.prev_red == False:
                 self.flag4 = True
                 self.current_red = True
                 self.prev_red = True
